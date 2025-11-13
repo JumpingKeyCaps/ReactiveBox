@@ -1,0 +1,71 @@
+uniform float2 uTilt;       // x = roll, y = pitch (radians)
+uniform float2 resolution;  // taille surface
+uniform float uTime;        // temps animation optionnelle
+
+float BoxDist(float2 p, float size) {
+    float2 d = abs(p) - size;
+    return length(max(d, 0.0)) + min(max(d.x, d.y), 0.0);
+}
+
+float3 CalculateNormal(float2 uv, float size) {
+    float2 eps = float2(0.001, 0.001);
+    float2 g = float2(
+        BoxDist(uv + eps.xy, size) - BoxDist(uv - eps.xy, size),
+        BoxDist(uv + eps.yx, size) - BoxDist(uv - eps.yx, size)
+    );
+    return normalize(float3(g, 0.5));
+}
+
+int DetectFace(float2 uv) {
+    float2 absUV = abs(uv);
+    if (absUV.x < 0.85 && absUV.y < 0.85) return 0; // Fond
+    if (absUV.x > absUV.y) return (uv.x > 0.0) ? 1 : 2; // Droite / Gauche
+    return (uv.y > 0.0) ? 3 : 4; // Haut / Bas
+}
+
+half4 main(in float2 fragCoord) {
+    float2 uv = (fragCoord / resolution) * 2.0 - 1.0;
+    float aspect = resolution.x / resolution.y;
+    uv.x *= aspect;
+
+    float2 parallaxUV = uv - uTilt * 0.18;
+
+    float boxSize = 0.85;
+    float dist = BoxDist(parallaxUV, boxSize);
+    float boxMask = smoothstep(0.02, 0.0, dist);
+
+    int face = DetectFace(parallaxUV);
+
+    float3 baseColor;
+    if (face == 0) baseColor = float3(0.15, 0.25, 0.45); // Fond
+    else if (face == 1) baseColor = float3(0.35, 0.25, 0.35);
+    else if (face == 2) baseColor = float3(0.25, 0.35, 0.35);
+    else if (face == 3) baseColor = float3(0.35, 0.35, 0.25);
+    else baseColor = float3(0.25, 0.35, 0.25);
+
+    float verticalGradient = (parallaxUV.y + 1.0) * 0.5;
+    baseColor = mix(baseColor * 0.6, baseColor * 1.8, verticalGradient);
+
+    float3 normal = CalculateNormal(parallaxUV, boxSize);
+    float3 lightDir = normalize(float3(uTilt.x * 1.5, uTilt.y * 1.5, 1.0));
+    float3 viewDir = float3(0.0, 0.0, 1.0);
+
+    float diffuse = max(dot(normal, lightDir), 0.0);
+    diffuse = 0.3 + 0.7 * diffuse;
+
+    float3 halfDir = normalize(lightDir + viewDir);
+    float specular = pow(max(dot(normal, halfDir), 0.0), 32.0) * 0.3;
+
+    float ao = 1.0 - smoothstep(0.5, 1.0, length(parallaxUV));
+    ao = 0.4 + 0.6 * ao;
+
+    float edgeGlow = smoothstep(0.02, 0.0, abs(dist)) * 0.15;
+
+    float3 color = baseColor * diffuse * ao + specular + edgeGlow;
+    color *= boxMask;
+
+    float3 bgColor = float3(0.05, 0.05, 0.08);
+    color = mix(bgColor, color, boxMask);
+
+    return half4(color, 1.0);
+}
