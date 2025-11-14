@@ -1,0 +1,116 @@
+uniform float2 uTilt;        // x = roll, y = pitch
+uniform float2 resolution;   // surface size
+uniform float uTime;
+
+/*--------------------------------------------------------------------------------
+    Faux espace 3D : projection d'un cube creusé vers "l'intérieur"
+    - On crée une transformation qui incline les faces vers un point de fuite
+    - On applique un shading cohérent sur toutes les faces
+--------------------------------------------------------------------------------*/
+
+float2 projectPseudo3D(float2 uv, float tiltX, float tiltY) {
+    // Effet de perspective cheap mais convaincant
+    float2 p = uv;
+    p.x += (p.y * tiltX) * 0.25;
+    p.y += (p.x * tiltY) * 0.25;
+    return p;
+}
+
+/*--------------------------------------------------------------------------------
+    Détection des faces du cube creusé
+    - Fond
+    - Haut / Bas
+    - Gauche / Droite
+--------------------------------------------------------------------------------*/
+
+int detectFace(float2 uv) {
+    float bx = 0.7;
+    float by = 0.7;
+    float ax = abs(uv.x);
+    float ay = abs(uv.y);
+
+    if (ax < bx && ay < by) return 0;   // Fond
+    if (ay > ax) {
+        return uv.y > 0.0 ? 1 : 2;      // Haut / Bas
+    } else {
+        return uv.x > 0.0 ? 3 : 4;      // Droite / Gauche
+    }
+}
+
+/*--------------------------------------------------------------------------------
+    Éclairage : normales approximées + lumière interne
+--------------------------------------------------------------------------------*/
+
+float3 computeNormal(float2 uv) {
+    float eps = 0.002;
+    float dC = length(uv);
+    float dX = length(uv + float2(eps, 0.0));
+    float dY = length(uv + float2(0.0, eps));
+
+    float3 n = normalize(float3(dX - dC, dY - dC, 0.25));
+    return n;
+}
+
+/*--------------------------------------------------------------------------------
+    Couleurs par face
+--------------------------------------------------------------------------------*/
+float3 faceColor(int face) {
+    if (face == 0) return float3(0.18, 0.22, 0.45); // Fond
+    if (face == 1) return float3(0.85, 0.75, 0.35); // Haut
+    if (face == 2) return float3(0.20, 0.85, 0.65); // Bas
+    if (face == 3) return float3(0.55, 0.35, 0.85); // Droite
+    return float3(0.25, 0.65, 0.95);                // Gauche
+}
+
+/*--------------------------------------------------------------------------------
+    Rendu final
+--------------------------------------------------------------------------------*/
+
+half4 main(float2 fragCoord) {
+    float2 uv = (fragCoord / resolution) * 2.0 - 1.0;
+    uv.x *= resolution.x / resolution.y;
+
+    // Tilt
+    float2 tilt = uTilt * 0.35;
+    uv -= tilt * 0.2;
+
+    // Projection pseudo 3D
+    float2 puv = projectPseudo3D(uv, tilt.x, tilt.y);
+
+    // Face active
+    int face = detectFace(puv);
+
+    // Base color
+    float3 col = faceColor(face);
+
+    // Gradient interne
+    float v = (puv.y + 1.0) * 0.5;
+    col *= mix(0.65, 1.85, v);
+
+    // Éclairage interne
+    float3 n = computeNormal(puv);
+    float3 light = normalize(float3(tilt.x, tilt.y, 1.0));
+    float diff = clamp(dot(n, light), 0.0, 1.0);
+
+    // Ambiance plus profonde pour le fond
+    float ao = 1.0 - smoothstep(0.3, 1.0, length(puv));
+    if (face == 0) ao *= 1.4;
+
+    // Specular interne
+    float3 view = float3(0.0, 0.0, 1.0);
+    float3 halfV = normalize(light + view);
+    float spec = pow(max(dot(n, halfV), 0.0), 48.0) * 0.25;
+
+    // Contours lumineux internes
+    float border = smoothstep(0.72, 0.70, max(abs(puv.x), abs(puv.y)));
+    float3 edgeGlow = border * float3(0.25, 0.9, 1.0) * 1.3;
+
+    // Composition
+    float3 outColor = col * (0.25 + diff * ao) + spec + edgeGlow;
+
+    // Masque carré
+    float mask = smoothstep(0.94, 0.90, length(max(abs(uv) - 0.9, 0.0)));
+    outColor *= 1.0 - mask;
+
+    return half4(outColor, 1.0);
+}
