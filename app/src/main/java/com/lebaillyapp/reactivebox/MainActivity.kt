@@ -13,7 +13,8 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
-import com.lebaillyapp.reactivebox.ui.composition.SensorDebugView
+import com.lebaillyapp.reactivebox.ui.composition.SensorCrosshairDebug
+import com.lebaillyapp.reactivebox.ui.composition.SensorCrosshairDebugOverkill
 import com.lebaillyapp.reactivebox.ui.theme.ReactiveBoxTheme
 import com.lebaillyapp.reactivebox.ui.viewModel.SensorViewModel
 
@@ -32,8 +33,8 @@ class MainActivity : ComponentActivity() {
                     Box( modifier = Modifier.fillMaxSize().padding(innerPadding) ){
 
                         //debug sensor
-                        SensorDebugView(viewModel = sensorViewModel)
-
+                   //     SensorCrosshairDebug(viewModel = sensorViewModel)
+                        SensorCrosshairDebugOverkill(viewModel = sensorViewModel)
                     }
                 }
             }
