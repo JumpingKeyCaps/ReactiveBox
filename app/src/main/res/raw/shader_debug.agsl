@@ -1,0 +1,13 @@
+uniform float2 resolution;
+uniform float2 uTilt;
+uniform float uTime;
+uniform float uEdgeThickness;
+uniform float uRimIntensity;
+uniform float uSpecularPower;
+uniform float uNoiseStrength;
+
+half4 main(float2 fragCoord) {
+    float2 uv = fragCoord / resolution;
+    float3 color = float3(uv.x, uv.y, 0.5);
+    return half4(color, 1.0);
+}
