@@ -13,6 +13,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
+import com.lebaillyapp.reactivebox.ui.composition.ReactiveBoxStatic
 import com.lebaillyapp.reactivebox.ui.composition.SensorCrosshairDebug
 import com.lebaillyapp.reactivebox.ui.composition.SensorCrosshairDebugOverkill
 import com.lebaillyapp.reactivebox.ui.theme.ReactiveBoxTheme
@@ -34,7 +35,11 @@ class MainActivity : ComponentActivity() {
 
                         //debug sensor
                    //     SensorCrosshairDebug(viewModel = sensorViewModel)
-                        SensorCrosshairDebugOverkill(viewModel = sensorViewModel)
+                    //    SensorCrosshairDebugOverkill(viewModel = sensorViewModel)
+
+
+                        ReactiveBoxStatic()
+
                     }
                 }
             }
