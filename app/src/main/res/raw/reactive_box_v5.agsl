@@ -1,0 +1,124 @@
+uniform float2 resolution;
+uniform float2 uTilt;
+uniform float uTime;
+uniform float uEdgeThickness;
+uniform float uRimIntensity;
+uniform float uSpecularPower;
+uniform float uNoiseStrength;
+
+// Constantes
+const float BOX_HALF_SIZE = 0.6;
+const float WALL_LIMIT = 1.0;
+const float MAX_TILT_OFFSET = WALL_LIMIT - BOX_HALF_SIZE;
+const float EPSILON = 0.008;
+const half3 NEON_LINE_COLOR = half3(0.0, 1.0, 1.0); // Cyan/Bleu vif
+
+// --- FONCTIONS CLÉS ---
+float2 aspectCorrect(float2 uv) {
+    uv.x *= resolution.x / resolution.y;
+    return uv;
+}
+
+float2 normalizeTilt(float2 tilt) {
+    float maxOffset = WALL_LIMIT - BOX_HALF_SIZE;
+    return clamp(tilt, -maxOffset, maxOffset);
+}
+
+int detectFace(float2 uv, float2 box) {
+    float ax = abs(uv.x);
+    float ay = abs(uv.y);
+    if (ax < box.x && ay < box.y) return 0; // Fond
+    if (ay > ax) return uv.y > 0.0 ? 1 : 2; // Murs Haut/Bas
+    return uv.x > 0.0 ? 3 : 4;                // Murs Droite/Gauche
+}
+
+float sdBox(float2 p, float2 b) {
+    float2 d = abs(p) - b;
+    return length(max(d, 0.0)) + min(max(d.x, d.y), 0.0);
+}
+
+// Fonction de distance d'un point P à une droite AB
+float sdLine(float2 p, float2 a, float2 b) {
+    float2 pa = p - a;
+    float2 ba = b - a;
+    return abs(pa.x * ba.y - pa.y * ba.x) / length(ba);
+}
+// ----------------------------------------------------------------
+
+half4 main(float2 fragCoord) {
+    // ----------------------------------------------------------------
+    // 1. SETUP DU PLAYGROUND
+    // ----------------------------------------------------------------
+
+    float2 uv = (fragCoord / resolution) * 2.0 - 1.0;
+    uv.y *= -1.0;
+
+    float2 nTilt = normalizeTilt(uTilt);
+    float2 p_view = aspectCorrect(uv + nTilt);
+    float2 s = sign(p_view);
+
+    // ----------------------------------------------------------------
+    // 2. GÉOMÉTRIE : Détection de Face
+    // ----------------------------------------------------------------
+    int face = detectFace(p_view, float2(BOX_HALF_SIZE, BOX_HALF_SIZE));
+
+    // ----------------------------------------------------------------
+    // 3. CALCUL DES LIGNES FILAIRES (distance au bord le plus proche)
+    // ----------------------------------------------------------------
+
+    float min_dist_to_line = 100.0;
+
+    float ax_view = abs(p_view.x);
+    float ay_view = abs(p_view.y);
+
+    if (face == 0) {
+        // --- Fond : Carré central DÉCALÉ ---
+        // Utiliser la distance signée pour le sdBox garantit que l'on obtient la distance
+        // la plus courte au bord, même à l'intérieur du fond.
+        min_dist_to_line = abs(sdBox(p_view, float2(BOX_HALF_SIZE, BOX_HALF_SIZE)));
+    } else {
+        // --- Murs : Lignes Convergentes Ancrées ---
+
+        // 1. Lignes du Fond (arêtes qui bougent avec le view)
+        float dist_fond_x = abs(ax_view - BOX_HALF_SIZE);
+        float dist_fond_y = abs(ay_view - BOX_HALF_SIZE);
+
+        if (face == 1 || face == 2) {
+            min_dist_to_line = min(min_dist_to_line, dist_fond_y);
+        } else {
+            min_dist_to_line = min(min_dist_to_line, dist_fond_x);
+        }
+
+        // 2. Lignes Convergentes (les diagonales qui doivent s'ancrer)
+        float2 corner_A = float2(BOX_HALF_SIZE, BOX_HALF_SIZE) * s;
+        float2 corner_B_anchor_raw = float2(WALL_LIMIT, WALL_LIMIT) * s;
+        float2 corner_B_anchor = aspectCorrect(corner_B_anchor_raw);
+        float2 nTilt_corrected = aspectCorrect(nTilt);
+        float2 corner_B_fixed = corner_B_anchor + nTilt_corrected;
+
+        float dist_line = sdLine(p_view, corner_A, corner_B_fixed);
+
+        // On utilise dist_line directement, sans le multiplier par 2.0 ici.
+        min_dist_to_line = min(min_dist_to_line, dist_line);
+    }
+
+    // ----------------------------------------------------------------
+    // 4. RENDU FINAL (Effet Néon/Bloom)
+    // ----------------------------------------------------------------
+
+    // 1. Coeur de la ligne (dure et blanche/vive)
+    float line_core = 1.0 - smoothstep(0.0, EPSILON * 0.5, min_dist_to_line);
+
+    // 2. Bloom/Glow (décroissance exponentielle pour l'effet de lumière)
+    // Plus min_dist_to_line est petit, plus l'intensité est élevée.
+    float bloom_intensity = exp(-min_dist_to_line * 30.0);
+
+    // 3. Intensité totale (on ajoute le coeur de ligne au bloom)
+    // On utilise uRimIntensity (qui est probablement 1.0 par défaut) pour moduler le coeur.
+    float total_line_intensity = bloom_intensity * 0.5 + line_core * uRimIntensity;
+
+    // Finalisation : Seulement les lignes sur fond noir
+    half3 finalColor = NEON_LINE_COLOR * total_line_intensity;
+
+    return half4(finalColor, 1.0);
+}
