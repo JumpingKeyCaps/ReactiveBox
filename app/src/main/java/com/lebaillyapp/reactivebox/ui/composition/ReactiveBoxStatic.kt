@@ -5,7 +5,9 @@ import android.graphics.RuntimeShader
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -41,7 +43,7 @@ fun ReactiveBoxStatic() {
     val shaderSource = remember {
         try {
             context.resources
-                .openRawResource(R.raw.shader_debug)
+                .openRawResource(R.raw.reactive_box_v5)
                 .bufferedReader()
                 .use { it.readText() }
         } catch (e: Exception) {
@@ -69,20 +71,24 @@ fun ReactiveBoxStatic() {
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color(0xFF0A0A10))
+            .background(Color(0xFF0A0A10)),
+        contentAlignment = Alignment.Center
     ) {
         // 4. Canvas avec ShaderBrush (la bonne approche pour AGSL)
         Canvas(
-            modifier = Modifier.fillMaxSize()
+            modifier = Modifier.fillMaxWidth(0.9f) // Prend 90% de la largeur de l'écran
+                .aspectRatio(1f)    // Force un ratio 1:1 (Carré parfait)
         ) {
             // Configuration des uniforms ICI, dans le drawScope
-            shader.setFloatUniform("uTilt", 0f, 0f)
+            shader.setFloatUniform("uTilt", -0.0f, 0.0f)
             shader.setFloatUniform("resolution", size.width, size.height)
             shader.setFloatUniform("uTime", time)
             shader.setFloatUniform("uEdgeThickness", 0.002f)
-            shader.setFloatUniform("uRimIntensity", 1.0f)
+            shader.setFloatUniform("uRimIntensity", 0.50f)
             shader.setFloatUniform("uSpecularPower", 32f)
             shader.setFloatUniform("uNoiseStrength", 0.005f)
+
+
 
             // Dessin avec le shader
             drawRect(ShaderBrush(shader))
@@ -91,12 +97,10 @@ fun ReactiveBoxStatic() {
         // 5. Debug overlay
         Text(
             text = """
-                🎨 ReactiveBox - Mode Statique
+                ReactiveBox - Mode Statique
                 Tilt: X=0.00 Y=0.00 (forcé)
                 Time: ${time.formatDecimal(2)}s
                 
-                 Shader actif
-                 Capteurs désactivés
             """.trimIndent(),
             color = Color.White.copy(alpha = 0.8f),
             modifier = Modifier
