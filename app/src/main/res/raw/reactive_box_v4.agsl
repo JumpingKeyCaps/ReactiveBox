@@ -1,0 +1,278 @@
+// ReactiveBox V4 - Ultra Realism
+// Uniforms exposés pour tuning runtime
+uniform float2 resolution;
+uniform float2 uTilt;
+uniform float uTime;
+uniform float uEdgeThickness;
+uniform float uRimIntensity;
+uniform float uSpecularPower;
+uniform float uNoiseStrength;
+
+// Helpers
+float2 aspectCorrect(float2 uv) {
+    uv.x *= resolution.x / resolution.y;
+    return uv;
+}
+
+// Enhanced pseudo-perspective with stronger depth
+float2 pseudoPerspective(float2 uv, float2 vp, float depthTweak) {
+    float2 toVP = vp - uv;
+    float d = length(toVP);
+    float factor = 1.0 / (1.0 + d * depthTweak);
+    return mix(uv, vp, 1.0 - factor);
+}
+
+// Signed distance to rounded rect
+float sdBoxRounded(float2 p, float2 b, float r) {
+    float2 d = abs(p) - b;
+    return length(max(d, 0.0)) - r + min(max(d.x, d.y), 0.0);
+}
+
+// Normal estimation with better z-bias
+float3 estimateNormal(float2 uv, float2 box, float r) {
+    float e = 0.0012;
+    float cx = sdBoxRounded(uv + float2(e, 0), box, r);
+    float nx = sdBoxRounded(uv - float2(e, 0), box, r);
+    float cy = sdBoxRounded(uv + float2(0, e), box, r);
+    float ny = sdBoxRounded(uv - float2(0, e), box, r);
+    float dx = cx - nx;
+    float dy = cy - ny;
+    return normalize(float3(dx, dy, 0.7));
+}
+
+// 2D noise
+float hash21(float2 p) {
+    p = fract(p * float2(123.34, 456.21));
+    p += dot(p, p + 45.32);
+    return fract(p.x * p.y);
+}
+
+float noise(float2 p) {
+    float2 i = floor(p);
+    float2 f = fract(p);
+    float a = hash21(i + float2(0.0, 0.0));
+    float b = hash21(i + float2(1.0, 0.0));
+    float c = hash21(i + float2(0.0, 1.0));
+    float d = hash21(i + float2(1.0, 1.0));
+    float2 u = f * f * (3.0 - 2.0 * f);
+    return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
+}
+
+// Softer, more pastel color palette
+float3 faceColor(int face) {
+    if (face == 0) return float3(0.18, 0.22, 0.42); // center - deeper blue
+    if (face == 1) return float3(0.88, 0.76, 0.52); // top - soft gold
+    if (face == 2) return float3(0.48, 0.88, 0.68); // bottom - mint green
+    if (face == 3) return float3(0.72, 0.58, 0.82); // right - lavender
+    return float3(0.52, 0.78, 0.88);                // left - sky blue
+}
+
+// Face detection
+int detectFace(float2 uv, float2 box) {
+    float ax = abs(uv.x);
+    float ay = abs(uv.y);
+    if (ax < box.x && ay < box.y) return 0;
+    if (ay > ax) return uv.y > 0.0 ? 1 : 2;
+    return uv.x > 0.0 ? 3 : 4;
+}
+
+// Smooth gradient falloff for face blending
+float faceFalloff(float2 localUV, float power) {
+    float2 dist = abs(localUV);
+    float maxDist = max(dist.x, dist.y);
+    return 1.0 - smoothstep(0.2, 1.0, maxDist);
+}
+
+half4 main(float2 fragCoord) {
+    // ----------------------------------------------------------------
+    // 1. PHASE DE PRÉPARATION (Coordonnées & Perspective)
+    // ----------------------------------------------------------------
+
+    // Normalize coords with aspect correction
+    float2 uv = (fragCoord / resolution) * 2.0 - 1.0;
+    uv.y *= -1.0; // Y Reversed correction
+    uv = aspectCorrect(uv);
+
+    // Enhanced parameters for deeper 3D effect
+    float depthAggression = 0.0;
+    float boxHalf = 0.3;
+    float cornerRadius = 0.005;
+    float edgeSoft = clamp(uEdgeThickness, 0.001, 0.005);
+
+    // Vanishing point from tilt (normalized range)
+    float2 normalizedTilt = float2(
+        uTilt.x / 1.57,  // Pitch
+        uTilt.y / 3.14   // Roll
+    );
+    float2 vp = normalizedTilt * 0.75;
+    float2 pv = pseudoPerspective(uv, vp, depthAggression);
+
+    // Stronger non-linear warp for depth
+    float depthWarp = pow(length(pv) * 0.85, 1.6);
+    pv *= (1.0 - 0.18 * depthWarp);
+
+    // ----------------------------------------------------------------
+    // 2. PHASE GÉOMÉTRIE (SDF, Faces & Normales)
+    // ----------------------------------------------------------------
+
+    // SDF and face detection
+    float sdf = sdBoxRounded(pv, float2(boxHalf, boxHalf), cornerRadius);
+    int face = detectFace(pv, float2(boxHalf, boxHalf));
+
+    // Base color per face
+    float3 base = faceColor(face);
+
+    // Local UV per face for gradients
+    float2 localUV = pv;
+    if (face != 0) {
+        if (face == 1) localUV = float2(pv.x, (pv.y - boxHalf));
+        else if (face == 2) localUV = float2(pv.x, (pv.y + boxHalf));
+        else if (face == 3) localUV = float2((pv.x - boxHalf), pv.y);
+        else localUV = float2((pv.x + boxHalf), pv.y);
+        localUV /= boxHalf;
+    } else {
+        localUV /= boxHalf;
+    }
+
+    // Smooth gradient from center to edges of each face
+    float faceGrad = faceFalloff(localUV, 1.8);
+    base = mix(base * 0.55, base, faceGrad);
+
+    // Cross-face blending for seamless transitions
+    float blendRadius = 0.12;
+    float2 distToEdge = abs(abs(pv) - float2(boxHalf, boxHalf));
+    float edgeBlend = smoothstep(0.0, blendRadius, min(distToEdge.x, distToEdge.y));
+
+    // Normal estimation
+    float3 n = estimateNormal(pv, float2(boxHalf, boxHalf), cornerRadius);
+
+    // ----------------------------------------------------------------
+    // 3. PHASE ÉCLAIRAGE (Diffuse, Specular, AO)
+    // ----------------------------------------------------------------
+
+    // Light and View setup
+    float3 lightDir = normalize(float3(-normalizedTilt.x * 1.0, -normalizedTilt.y * 1.0, 1.2));
+    float3 view = float3(0.0, 0.0, 1.0);
+
+    // Diffuse
+    float diff = max(dot(n, lightDir), 0.0);
+    diff = pow(diff, 0.8);
+
+    // Specular
+    float3 halfV = normalize(lightDir + view);
+    float specCore = pow(max(dot(n, halfV), 0.0), uSpecularPower) * 0.25;
+
+    // Ambient Occlusion
+    float distFromCenter = length(pv);
+    float occlusion = smoothstep(0.4, 1.0, distFromCenter) * 0.7;
+    float cornerOcclusion = smoothstep(-0.02, -0.08, sdf) * 0.5;
+    float ao = clamp(1.0 - (occlusion + cornerOcclusion), 0.2, 1.0);
+
+    // Rim light, Fresnel, Noise
+    float fresnel = pow(1.0 - max(dot(n, view), 0.0), 3.0); // Pas utilisé dans la composition finale, mais calculé
+    float edge = smoothstep(edgeSoft * 1.5, 0.0, abs(sdf));
+    float rim = pow(edge, 4.0) * uRimIntensity;
+    float nseed = noise(pv * 15.0 + uTime * 0.015);
+    float nval = (nseed - 0.5) * 2.0 * uNoiseStrength;
+
+
+    // ----------------------------------------------------------------
+    // 4. ZONE DE DÉBOGAGE PAR COUCHES (VISUALISATION)
+    // ----------------------------------------------------------------
+
+    float3 debugColor = float3(0.0); // Variable temporaire pour les tests
+
+    // Ordre de test logique :
+
+    // 1. COORDONNÉES UV (Vérifie la résolution et l'aspect ratio)
+  //  float3 tempUV;
+  //  tempUV.r = uv.x * 0.5 + 0.5; // X -> Rouge
+  //  tempUV.g = uv.y * 0.5 + 0.5; // Y -> Vert (corrigé)
+ //   tempUV.b = 0.0;
+ //   debugColor = tempUV;
+
+    // 1.1. VÉRIFICATION DE L'AXE Y (Affiche Y en niveaux de gris)- doit etre degrader vertical du blanc(top) au noir (bottom)
+  //  float y_normalized = uv.y * 0.5 + 0.5; // Mappe [-1.0, 1.0] vers [0.0, 1.0]
+ //   debugColor = float3(y_normalized);
+
+
+// 1.2. VÉRIFICATION DE L'AXE X (Affiche X en niveaux de gris)
+   // float x_normalized = uv.x * 0.5 + 0.5; // Mappe [-1.0, 1.0] vers [0.0, 1.0]
+  //  debugColor = float3(x_normalized);
+
+
+  // 1.5. VISUALISER LE SHIFT DE PERSPECTIVE (pv)
+   //   float3 tempPV;
+    //  tempPV.r = pv.x * 0.5 + 0.5;
+    //  tempPV.g = pv.y * 0.5 + 0.5;
+    //  tempPV.b = 0.0;
+   //   debugColor = tempPV;
+
+    // 2. MASQUE SDF (Vérifie la position et la forme de la boîte)
+  //   float sdf_mask = smoothstep(0.005, -0.005, sdf);
+   //  debugColor = float3(sdf_mask);
+
+    // 3. COULEURS DE BASE PAR FACE (Vérifie detectFace et faceColor)
+     //debugColor = base;
+
+    // 4. NORMALES (Vérifie estimateNormal et la géométrie)
+   //  debugColor = n * 0.5 + 0.5;
+
+    // 5. DIFFUSION (Vérifie le lightDir et l'ombrage)
+    // debugColor = float3(diff);
+
+    // 6. OCCLUSION AMBIANTE (AO) (Vérifie l'effet de profondeur/coins)
+     //debugColor = float3(ao);
+
+    // 7. RIM LIGHT (Vérifie l'effet de bordure)
+    // debugColor = rim * float3(1.0, 0.0, 0.0); // Afficher en rouge pur pour la visibilité
+
+    // ----------------------------------------------------------------
+
+   //  return half4(debugColor, 1.0); // DÉCOMMENTER LORS DU DÉBOGAGE
+
+    // ----------------------------------------------------------------
+    // 5. PHASE DE COMPOSITION & POST-PROCESSING (Original)
+    // ----------------------------------------------------------------
+
+    // Cyan rim color
+    float3 rimColor = float3(0.5, 0.92, 1.0) * 1.3;
+
+    // Shading composition
+    float3 baseShaded = base * (0.25 + 0.75 * diff * ao);
+
+    // Subtle specular only on edges
+    float3 specularColor = specCore * float3(0.9, 0.95, 1.0) * edgeBlend;
+
+    // Strong cyan rim
+    float3 rimGlow = rim * rimColor;
+
+    // Ultra-fine inner edge line
+    float innerLine = smoothstep(0.0015, 0.0, abs(sdf)) * 1.2;
+    float3 lineColor = innerLine * float3(0.4, 0.85, 1.0);
+
+    // Radial darkening from center
+    float centerFall = smoothstep(0.0, 0.75, distFromCenter);
+    baseShaded *= (1.0 - 0.5 * centerFall);
+
+    // Combine all elements
+    float3 color = baseShaded + specularColor + rimGlow + lineColor;
+    color += nval;
+
+    // Smooth outer mask
+    float outerMask = smoothstep(0.96, 0.92, sdBoxRounded(uv, float2(0.98, 0.98), 0.0));
+   // color = mix(float3(0.02, 0.02, 0.05), color, 1.0 - outerMask);
+
+    // Subtle vignette
+    float vign = smoothstep(1.5, 0.2, length(uv) * 1.1);
+    color *= mix(1.0, 0.88, vign * 0.5);
+
+    // Final color grading
+    color = pow(color, float3(0.92, 0.92, 0.92));
+
+    // Slight desaturation
+    float luma = dot(color, float3(0.299, 0.587, 0.114));
+    color = mix(float3(luma), color, 0.92);
+
+    return half4(color, 1.0); // LIGNE FINALE : DÉCOMMENTER CETTE LIGNE POUR LE RENDU FINAL
+}
