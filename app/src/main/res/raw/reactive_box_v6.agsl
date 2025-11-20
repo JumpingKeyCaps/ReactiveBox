@@ -1,0 +1,115 @@
+uniform float2 resolution;
+uniform float2 uTilt;
+uniform float uTime;
+uniform float uEdgeThickness;
+uniform float uRimIntensity;
+uniform float uSpecularPower;
+uniform float uNoiseStrength;
+
+// Constantes
+const float BOX_HALF_SIZE = 0.6;
+const float WALL_LIMIT = 1.0;
+const float EPSILON = 0.008;
+const half3 NEON_LINE_COLOR = half3(0.0, 1.0, 1.0);
+
+// Helpers
+float2 aspectCorrect(float2 uv) {
+    uv.x *= resolution.x / resolution.y;
+    return uv;
+}
+
+float2 normalizeTilt(float2 tilt) {
+    float maxOffset = WALL_LIMIT - BOX_HALF_SIZE;
+    return clamp(tilt, -maxOffset, maxOffset);
+}
+
+float sdSegment(float2 p, float2 a, float2 b) {
+    float2 pa = p - a;
+    float2 ba = b - a;
+    float h = clamp(dot(pa, ba) / dot(ba, ba), 0.0, 1.0);
+    return length(pa - ba * h);
+}
+
+// Signed distance to a convex quad (negative inside, positive outside)
+float sdQuadSigned(float2 p, float2 a, float2 b, float2 c, float2 d) {
+    // distance to edges
+    float d0 = sdSegment(p, a, b);
+    float d1 = sdSegment(p, b, c);
+    float d2 = sdSegment(p, c, d);
+    float d3 = sdSegment(p, d, a);
+    float mind = min(min(d0, d1), min(d2, d3));
+
+    // winding / same-side test (convex quad)
+    float2 ab = b - a;
+    float2 bc = c - b;
+    float2 cd = d - c;
+    float2 da = a - d;
+
+    float c0 = ab.x * (p.y - a.y) - ab.y * (p.x - a.x);
+    float c1 = bc.x * (p.y - b.y) - bc.y * (p.x - b.x);
+    float c2 = cd.x * (p.y - c.y) - cd.y * (p.x - c.x);
+    float c3 = da.x * (p.y - d.y) - da.y * (p.x - d.x);
+
+    bool allPos = (c0 >= 0.0 && c1 >= 0.0 && c2 >= 0.0 && c3 >= 0.0);
+    bool allNeg = (c0 <= 0.0 && c1 <= 0.0 && c2 <= 0.0 && c3 <= 0.0);
+
+    return (allPos || allNeg) ? -mind : mind;
+}
+
+half4 main(float2 fragCoord) {
+    // 1) coord / view-space (avec aspect & tilt)
+    float2 uv = (fragCoord / resolution) * 2.0 - 1.0;
+    uv.y *= -1.0;
+
+    float2 nTilt = normalizeTilt(uTilt);
+    float2 p_view = aspectCorrect(uv + nTilt);
+
+    // Pré-calculs pour sommets externes
+    float2 nTilt_corrected = aspectCorrect(nTilt);
+    // Outer corners anchored to WALL_LIMIT, aspect-corrected then offset by tilt (même logique que précédemment)
+    float2 outerTL = aspectCorrect(float2(-WALL_LIMIT,  WALL_LIMIT)) + nTilt_corrected;
+    float2 outerTR = aspectCorrect(float2( WALL_LIMIT,  WALL_LIMIT)) + nTilt_corrected;
+    float2 outerBR = aspectCorrect(float2( WALL_LIMIT, -WALL_LIMIT)) + nTilt_corrected;
+    float2 outerBL = aspectCorrect(float2(-WALL_LIMIT, -WALL_LIMIT)) + nTilt_corrected;
+
+    // Box (central) corners (dans le même espace p_view)
+    float2 boxTL = float2(-BOX_HALF_SIZE,  BOX_HALF_SIZE);
+    float2 boxTR = float2( BOX_HALF_SIZE,  BOX_HALF_SIZE);
+    float2 boxBR = float2( BOX_HALF_SIZE, -BOX_HALF_SIZE);
+    float2 boxBL = float2(-BOX_HALF_SIZE, -BOX_HALF_SIZE);
+
+    // 2) construire les 5 quads (ordre cohérent / convexe)
+    // Fond (box) : TL, TR, BR, BL (horloge)
+    float sd_box = sdQuadSigned(p_view, boxTL, boxTR, boxBR, boxBL);
+
+    // Top wall : box top edge -> outer top edge
+    // Quad: boxTL, boxTR, outerTR, outerTL
+    float sd_top = sdQuadSigned(p_view, boxTL, boxTR, outerTR, outerTL);
+
+    // Bottom wall : boxBR, boxBL, outerBL, outerBR (watch winding -> keep consistent)
+    float sd_bottom = sdQuadSigned(p_view, boxBR, boxBL, outerBL, outerBR);
+
+    // Left wall : outerTL, boxTL, boxBL, outerBL
+    float sd_left = sdQuadSigned(p_view, outerTL, boxTL, boxBL, outerBL);
+
+    // Right wall : boxTR, outerTR, outerBR, boxBR
+    float sd_right = sdQuadSigned(p_view, boxTR, outerTR, outerBR, boxBR);
+
+    // 3) distance au bord le plus proche (on veut la distance absolue aux arêtes)
+    float min_abs_dist = min(
+        min(abs(sd_box), abs(sd_top)),
+        min(min(abs(sd_bottom), abs(sd_left)), abs(sd_right))
+    );
+
+    // On garde aussi le signe si nécessaire pour d'autres effets plus tard
+    // float signed_min = ??? (on peut utiliser le signe du polygone contenant p_view si besoin)
+
+    // 4) rendu lignes néon (même logique que ton ancien shader)
+    float line_core = 1.0 - smoothstep(0.0, EPSILON * 0.5, min_abs_dist);
+    float bloom_intensity = exp(-min_abs_dist * 30.0);
+    float total_line_intensity = bloom_intensity * 0.5 + line_core * uRimIntensity;
+
+    half3 finalColor = NEON_LINE_COLOR * total_line_intensity;
+
+    return half4(finalColor, 1.0);
+}
