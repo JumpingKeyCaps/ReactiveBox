@@ -43,7 +43,7 @@ fun ReactiveBoxStatic() {
     val shaderSource = remember {
         try {
             context.resources
-                .openRawResource(R.raw.reactive_box_v5)
+                .openRawResource(R.raw.reactive_box_v10)
                 .bufferedReader()
                 .use { it.readText() }
         } catch (e: Exception) {
@@ -76,14 +76,14 @@ fun ReactiveBoxStatic() {
     ) {
         // 4. Canvas avec ShaderBrush (la bonne approche pour AGSL)
         Canvas(
-            modifier = Modifier.fillMaxWidth(0.9f) // Prend 90% de la largeur de l'écran
+            modifier = Modifier.fillMaxWidth(1f) // Prend 90% de la largeur de l'écran
                 .aspectRatio(1f)    // Force un ratio 1:1 (Carré parfait)
         ) {
             // Configuration des uniforms ICI, dans le drawScope
-            shader.setFloatUniform("uTilt", -0.0f, 0.0f)
+            shader.setFloatUniform("uTilt", 0.0f, 0.0f)
             shader.setFloatUniform("resolution", size.width, size.height)
             shader.setFloatUniform("uTime", time)
-            shader.setFloatUniform("uEdgeThickness", 0.002f)
+            shader.setFloatUniform("uEdgeThickness", 0.005f)
             shader.setFloatUniform("uRimIntensity", 0.50f)
             shader.setFloatUniform("uSpecularPower", 32f)
             shader.setFloatUniform("uNoiseStrength", 0.005f)
