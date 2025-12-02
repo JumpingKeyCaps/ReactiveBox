@@ -10,6 +10,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -57,6 +58,9 @@ object HsvColorUtils {
  * Data class pour contenir tous les réglages du shader, incluant les 9 couleurs des faces.
  */
 data class ShaderSettings(
+    // Profondeur de la boîte
+    val boxHalfSize: Float = 0.6f, // Corresponds à BOX_HALF_SIZE
+
     // Visuels Généraux
     val edgeThickness: Float = 0.005f,
     val rimIntensity: Float = 0.50f,
@@ -100,14 +104,18 @@ fun ReactiveBoxInteractiveSettings(
     var settings by remember { mutableStateOf(ShaderSettings()) }
 
     // 1. COLLECTE DES DONNÉES DYNAMIQUES DU CAPTEUR
+    //  tilt contient maintenant la valeur calibrée (lecture brute - offset)
     val tiltOffset by viewModel.tilt.collectAsState()
     val tiltX = tiltOffset.x
     val tiltY = tiltOffset.y
 
+    //  Collecte du coefficient de lissage
+    val smoothing by viewModel.smoothingCoefficient.collectAsState()
+
+
     // 2. Chargement du shader (v11)
     val shaderSource = remember {
         try {
-            // NOTE: R.raw.reactive_box_v11 doit exister dans le projet Android
             context.resources
                 .openRawResource(R.raw.reactive_box_v11)
                 .bufferedReader()
@@ -164,6 +172,7 @@ fun ReactiveBoxInteractiveSettings(
                 shader.setFloatUniform("uTilt", tiltX, tiltY)
 
                 // Réglages Visuels
+                shader.setFloatUniform("uBoxHalfSize", settings.boxHalfSize)
                 shader.setFloatUniform("uEdgeThickness", settings.edgeThickness)
                 shader.setFloatUniform("uRimIntensity", settings.rimIntensity)
                 shader.setFloatUniform("uFaceBrightness", settings.faceBrightness)
@@ -205,7 +214,9 @@ fun ReactiveBoxInteractiveSettings(
                 text = """
                     ReactiveBox - Interactive (v11)
                     Tilt: X=${tiltX.formatDecimal(2)} Y=${tiltY.formatDecimal(2)}
+                    Lissage: ${smoothing.formatDecimal(2)}
                     Brightness: ${settings.faceBrightness.formatDecimal(2)}
+                    Box Size: ${settings.boxHalfSize.formatDecimal(2)}
                 """.trimIndent(),
                 color = Color.White.copy(alpha = 0.8f),
                 modifier = Modifier
@@ -231,90 +242,52 @@ fun ReactiveBoxInteractiveSettings(
                     Text("Réglages Dynamiques du Shader", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                     Spacer(modifier = Modifier.height(16.dp))
 
-                    // Fonction utilitaire pour un Slider (Générique)
-                    @Composable
-                    fun SettingSlider(
-                        label: String,
-                        value: Float,
-                        range: ClosedFloatingPointRange<Float>,
-                        steps: Int = 0,
-                        onValueChange: (Float) -> Unit
+                    // --- RÉGLAGES CAPTEUR (Calibration et Lissage) ---
+                    Text("Réactivité du Capteur", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    Divider(Modifier.padding(vertical = 4.dp))
+
+                    //  SLIDER DE LISSAGE
+                    SettingSlider(
+                        label = "Lissage (Smoothing)",
+                        value = smoothing,
+                        range = 0.01f..0.10f,
+                        steps = 99,
+                        onValueChange = { viewModel.setSmoothingCoefficient(it) }
+                    )
+
+                    // Bouton de calibration
+                    Button(
+                        onClick = { viewModel.calibrate() }, // APPEL DE LA FONCTION DE CALIBRATION
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(48.dp)
+                            .padding(vertical = 4.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                            contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+                        )
                     ) {
-                        Column(Modifier.padding(vertical = 8.dp)) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                Text(label, style = MaterialTheme.typography.bodyMedium)
-                                val precision = if (steps > 0) 3 else 2
-                                Text(value.formatDecimal(precision), fontWeight = FontWeight.SemiBold)
-                            }
-                            Slider(
-                                value = value,
-                                onValueChange = onValueChange,
-                                valueRange = range,
-                                steps = steps
-                            )
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Filled.Refresh, contentDescription = "Calibrer")
+                            Spacer(Modifier.width(8.dp))
+                            Text("Calibrer le Zéro d'Inclinaison (Position Actuelle)")
                         }
                     }
+                    Spacer(modifier = Modifier.height(16.dp))
+                    // --- FIN RÉGLAGES CAPTEUR ---
 
-                    // NOUVEAU : Fonction utilitaire pour un Slider de Teinte (HUE)
-                    @Composable
-                    fun HUESliderSetting(
-                        label: String,
-                        color: Color,
-                        onColorChange: (Color) -> Unit
-                    ) {
-                        // 1. Obtenir les valeurs HSV de la couleur actuelle
-                        val hsv = HsvColorUtils.toHsv(color)
-                        // 2. La teinte (index 0) est l'état du slider
-                        var currentHue by remember { mutableFloatStateOf(hsv[0]) }
 
-                        Column(Modifier.padding(vertical = 8.dp)) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                Text(label, style = MaterialTheme.typography.bodyMedium)
 
-                                // Début de la modification: Affichage Hue + Box
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    // Affichage de la valeur HUE
-                                    Text(
-                                        text = "${currentHue.roundToInt()}°",
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        fontWeight = FontWeight.SemiBold,
-                                        modifier = Modifier.padding(end = 8.dp)
-                                    )
+                    // --- RÉGLAGE: PROFONDEUR DE LA BOÎTE ---
+                    Text("Géométrie de la Boîte", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    Divider(Modifier.padding(vertical = 4.dp))
+                    SettingSlider(
+                        label = "Profondeur de la Boîte (Half Size)",
+                        value = settings.boxHalfSize,
+                        range = 0.1f..0.9f, // Plage sécuritaire (WALL_LIMIT est à 1.0)
+                        onValueChange = { settings = settings.copy(boxHalfSize = it) }
+                    )
 
-                                    // Visualisation de la couleur
-                                    Box(
-                                        modifier = Modifier
-                                            .size(32.dp)
-                                            .background(color, CircleShape)
-                                            .border(2.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f), CircleShape)
-                                    )
-                                }
-                                // Fin de la modification
-
-                            }
-                            // Slider pour la Teinte (Hue)
-                            Slider(
-                                value = currentHue,
-                                onValueChange = { newHue ->
-                                    currentHue = newHue
-                                    // 3. Reconstruire la couleur avec la nouvelle Teinte (Hue),
-                                    // mais conserver la Saturation (index 1) et la Valeur (index 2) originales.
-                                    val newColor = HsvColorUtils.fromHsv(newHue, hsv[1], hsv[2], color.alpha)
-                                    onColorChange(newColor)
-                                },
-                                valueRange = 0f..360f,
-                                steps = 359, // 360 valeurs pour une couleur lisse
-                                modifier = Modifier.padding(top = 8.dp)
-                            )
-                        }
-                    }
 
                     // --- RÉGLAGES COULEURS NÉON ---
                     Text("Couleurs Néon et Highlights (Teinte)", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 8.dp))
@@ -439,5 +412,90 @@ fun ReactiveBoxInteractiveSettings(
                 }
             }
         }
+    }
+}
+
+// Fonction utilitaire pour un Slider (Générique)
+@Composable
+fun SettingSlider(
+    label: String,
+    value: Float,
+    range: ClosedFloatingPointRange<Float>,
+    steps: Int = 0,
+    onValueChange: (Float) -> Unit
+) {
+    Column(Modifier.padding(vertical = 8.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Text(label, style = MaterialTheme.typography.bodyMedium)
+            val precision = if (steps > 0) 3 else 2
+            Text(value.formatDecimal(precision), fontWeight = FontWeight.SemiBold)
+        }
+        Slider(
+            value = value,
+            onValueChange = onValueChange,
+            valueRange = range,
+            steps = steps
+        )
+    }
+}
+
+// NOUVEAU : Fonction utilitaire pour un Slider de Teinte (HUE)
+@Composable
+fun HUESliderSetting(
+    label: String,
+    color: Color,
+    onColorChange: (Color) -> Unit
+) {
+    // 1. Obtenir les valeurs HSV de la couleur actuelle
+    val hsv = HsvColorUtils.toHsv(color)
+    // 2. La teinte (index 0) est l'état du slider
+    var currentHue by remember { mutableFloatStateOf(hsv[0]) }
+
+    Column(Modifier.padding(vertical = 8.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Text(label, style = MaterialTheme.typography.bodyMedium)
+
+            // Début de la modification: Affichage Hue + Box
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                // Affichage de la valeur HUE
+                Text(
+                    text = "${currentHue.roundToInt()}°",
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.padding(end = 8.dp)
+                )
+
+                // Visualisation de la couleur
+                Box(
+                    modifier = Modifier
+                        .size(32.dp)
+                        .background(color, CircleShape)
+                        .border(2.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f), CircleShape)
+                )
+            }
+            // Fin de la modification
+
+        }
+        // Slider pour la Teinte (Hue)
+        Slider(
+            value = currentHue,
+            onValueChange = { newHue ->
+                currentHue = newHue
+                // 3. Reconstruire la couleur avec la nouvelle Teinte (Hue),
+                // mais conserver la Saturation (index 1) et la Valeur (index 2) originales.
+                val newColor = HsvColorUtils.fromHsv(newHue, hsv[1], hsv[2], color.alpha)
+                onColorChange(newColor)
+            },
+            valueRange = 0f..360f,
+            steps = 359, // 360 valeurs pour une couleur lisse
+            modifier = Modifier.padding(top = 8.dp)
+        )
     }
 }
