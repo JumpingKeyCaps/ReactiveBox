@@ -14,6 +14,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
 import com.lebaillyapp.reactivebox.ui.composition.ReactiveBoxInteractive
+import com.lebaillyapp.reactivebox.ui.composition.ReactiveBoxInteractiveSettings
 import com.lebaillyapp.reactivebox.ui.composition.ReactiveBoxStatic
 import com.lebaillyapp.reactivebox.ui.composition.SensorCrosshairDebug
 import com.lebaillyapp.reactivebox.ui.composition.SensorCrosshairDebugOverkill
@@ -34,14 +35,19 @@ class MainActivity : ComponentActivity() {
                 Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
                     Box( modifier = Modifier.fillMaxSize().padding(innerPadding) ){
 
-                        //debug sensor
+                        // 1 - Debug sensor
                    //     SensorCrosshairDebug(viewModel = sensorViewModel)
                     //    SensorCrosshairDebugOverkill(viewModel = sensorViewModel)
 
 
+                          // 2 - Test shader without sensor
                     //    ReactiveBoxStatic()
 
-                        ReactiveBoxInteractive(viewModel = sensorViewModel)
+                          // 3 - Test shader with sensor implemented
+                   //     ReactiveBoxInteractive(viewModel = sensorViewModel)
+
+                        // 4 - Test shader with sensor implemented and interactive settings
+                        ReactiveBoxInteractiveSettings(viewModel = sensorViewModel)
 
                     }
                 }
