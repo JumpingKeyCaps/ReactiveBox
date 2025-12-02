@@ -1,9 +1,10 @@
-// reactive_box_v11.agsl
-
 // ------------------- DYNAMIC UNIFORMS (Contrôlés par Kotlin) -------------------
 uniform float2 resolution;
-uniform float2 uTilt; // Capteur
+uniform float2 uTilt; // Capteur (maintenant calibré dans Kotlin)
 uniform float uTime;  // Animation
+
+// Géométrie
+uniform float uBoxHalfSize;   //  Profondeur de la boîte
 
 // Réglages d'Apparence
 uniform float uEdgeThickness; // Épaisseur de la ligne néon
@@ -33,7 +34,6 @@ uniform float uAORadius;       // Rayon d'influence de l'AO (AO_RADIUS)
 
 
 // ------------------- STATICS (Constantes AGSL) -------------------
-const float BOX_HALF_SIZE = 0.6;
 const float WALL_LIMIT = 1.0;
 
 
@@ -44,7 +44,8 @@ float2 aspectCorrect(float2 uv) {
 }
 
 float2 normalizeTilt(float2 tilt) {
-    float maxOffset = WALL_LIMIT - BOX_HALF_SIZE;
+    // Utilise uBoxHalfSize
+    float maxOffset = WALL_LIMIT - uBoxHalfSize;
     return clamp(tilt, -maxOffset, maxOffset);
 }
 
@@ -103,6 +104,7 @@ float calculateAO(float2 p, int faceId,
                   float2 outerTL, float2 outerTR, float2 outerBR, float2 outerBL) {
 
     float ao = 1.0; // Pas d'occlusion par défaut
+    float boxHalfSize = uBoxHalfSize; // Utilise l'uniforme
 
     // Utilise le nouvel uniforme uAORadius
     float aoRadius = uAORadius;
@@ -110,14 +112,14 @@ float calculateAO(float2 p, int faceId,
     if (faceId == 0) {
         // FOND : AO aux 4 bords
         float distToEdges = min(
-            min(abs(p.x - BOX_HALF_SIZE), abs(p.x + BOX_HALF_SIZE)),
-            min(abs(p.y - BOX_HALF_SIZE), abs(p.y + BOX_HALF_SIZE))
+            min(abs(p.x - boxHalfSize), abs(p.x + boxHalfSize)),
+            min(abs(p.y - boxHalfSize), abs(p.y + boxHalfSize))
         );
         ao = smoothstep(0.0, aoRadius, distToEdges);
 
     } else if (faceId == 1) {
         // TOP WALL : AO le long de l'arête intérieure + diagonales
-        float distToBottom = abs(p.y - BOX_HALF_SIZE);
+        float distToBottom = abs(p.y - boxHalfSize);
         ao = smoothstep(0.0, aoRadius, distToBottom);
 
         // AO le long des diagonales gauche et droite
@@ -128,7 +130,7 @@ float calculateAO(float2 p, int faceId,
 
     } else if (faceId == 2) {
         // BOTTOM WALL : AO le long de l'arête intérieure + diagonales
-        float distToTop = abs(p.y + BOX_HALF_SIZE);
+        float distToTop = abs(p.y + boxHalfSize);
         ao = smoothstep(0.0, aoRadius, distToTop);
 
         // AO le long des diagonales
@@ -139,7 +141,7 @@ float calculateAO(float2 p, int faceId,
 
     } else if (faceId == 3) {
         // LEFT WALL : AO le long de l'arête intérieure + diagonales
-        float distToRight = abs(p.x + BOX_HALF_SIZE);
+        float distToRight = abs(p.x + boxHalfSize);
         ao = smoothstep(0.0, aoRadius, distToRight);
 
         // AO le long des diagonales haut et bas
@@ -150,7 +152,7 @@ float calculateAO(float2 p, int faceId,
 
     } else if (faceId == 4) {
         // RIGHT WALL : AO le long de l'arête intérieure + diagonales
-        float distToLeft = abs(p.x - BOX_HALF_SIZE);
+        float distToLeft = abs(p.x - boxHalfSize);
         ao = smoothstep(0.0, aoRadius, distToLeft);
 
         // AO le long des diagonales haut et bas
@@ -180,11 +182,11 @@ half4 main(float2 fragCoord) {
     float2 outerBR = aspectCorrect(float2( WALL_LIMIT, -WALL_LIMIT)) + nTilt_corrected;
     float2 outerBL = aspectCorrect(float2(-WALL_LIMIT, -WALL_LIMIT)) + nTilt_corrected;
 
-    // box corners (center)
-    float2 boxTL = float2(-BOX_HALF_SIZE,  BOX_HALF_SIZE);
-    float2 boxTR = float2( BOX_HALF_SIZE,  BOX_HALF_SIZE);
-    float2 boxBR = float2( BOX_HALF_SIZE, -BOX_HALF_SIZE);
-    float2 boxBL = float2(-BOX_HALF_SIZE, -BOX_HALF_SIZE);
+    // box corners (center) - UTILISE uBoxHalfSize
+    float2 boxTL = float2(-uBoxHalfSize,  uBoxHalfSize);
+    float2 boxTR = float2( uBoxHalfSize,  uBoxHalfSize);
+    float2 boxBR = float2( uBoxHalfSize, -uBoxHalfSize);
+    float2 boxBL = float2(-uBoxHalfSize, -uBoxHalfSize);
 
     // --- build quads with consistent winding (CCW) ---
     float2 a0 = boxTL, b0 = boxTR, c0 = boxBR, d0 = boxBL;
@@ -235,32 +237,32 @@ half4 main(float2 fragCoord) {
 
     } else if (faceId == 1) {
         // TOP WALL : Gradient vertical (clair en haut, sombre vers le fond)
-        float distToInner = abs(p_view.y - BOX_HALF_SIZE);
-        float totalDist = abs(outerTL.y - BOX_HALF_SIZE);
+        float distToInner = abs(p_view.y - uBoxHalfSize);
+        float totalDist = abs(outerTL.y - uBoxHalfSize);
         float t = clamp(distToInner / totalDist, 0.0, 1.0);
         t = smoothstep(0.0, 1.0, t);
         faceColor = mix(uColorTopDark, uColorTopLight, t) * brightness; // Utilise uColorTop...
 
     } else if (faceId == 2) {
         // BOTTOM WALL : Gradient vertical (clair en bas, sombre vers le fond)
-        float distToInner = abs(p_view.y + BOX_HALF_SIZE);
-        float totalDist = abs(outerBL.y + BOX_HALF_SIZE);
+        float distToInner = abs(p_view.y + uBoxHalfSize);
+        float totalDist = abs(outerBL.y + uBoxHalfSize);
         float t = clamp(distToInner / totalDist, 0.0, 1.0);
         t = smoothstep(0.0, 1.0, t);
         faceColor = mix(uColorBottomDark, uColorBottomLight, t) * brightness; // Utilise uColorBottom...
 
     } else if (faceId == 3) {
         // LEFT WALL : Gradient horizontal (clair à gauche, sombre vers le fond)
-        float distToInner = abs(p_view.x + BOX_HALF_SIZE);
-        float totalDist = abs(outerTL.x + BOX_HALF_SIZE);
+        float distToInner = abs(p_view.x + uBoxHalfSize);
+        float totalDist = abs(outerTL.x + uBoxHalfSize);
         float t = clamp(distToInner / totalDist, 0.0, 1.0);
         t = smoothstep(0.0, 1.0, t);
         faceColor = mix(uColorLeftDark, uColorLeftLight, t) * brightness; // Utilise uColorLeft...
 
     } else if (faceId == 4) {
         // RIGHT WALL : Gradient horizontal (clair à droite, sombre vers le fond)
-        float distToInner = abs(p_view.x - BOX_HALF_SIZE);
-        float totalDist = abs(outerTR.x - BOX_HALF_SIZE);
+        float distToInner = abs(p_view.x - uBoxHalfSize);
+        float totalDist = abs(outerTR.x - uBoxHalfSize);
         float t = clamp(distToInner / totalDist, 0.0, 1.0);
         t = smoothstep(0.0, 1.0, t);
         faceColor = mix(uColorRightDark, uColorRightLight, t) * brightness; // Utilise uColorRight...
