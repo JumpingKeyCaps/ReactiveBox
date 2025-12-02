@@ -94,7 +94,7 @@ fun ReactiveBoxInteractive(
             shader.setFloatUniform("resolution", size.width, size.height)
             shader.setFloatUniform("uTime", time)
             shader.setFloatUniform("uEdgeThickness", 0.005f)
-            shader.setFloatUniform("uRimIntensity", 0.50f)
+            shader.setFloatUniform("uRimIntensity", 3.50f)
             shader.setFloatUniform("uSpecularPower", 32f)
             shader.setFloatUniform("uNoiseStrength", 0.005f)
 

@@ -14,10 +14,10 @@ const half3 NEON_LINE_COLOR = half3(0.0, 1.0, 1.0); // cyan
 const half3 HIGHLIGHT_COLOR = half3(0.9, 0.95, 1.0);
 
 // RÉGLAGE FACILE : Luminosité globale des faces (0.0 = noir, 1.0 = full)
-const float FACE_BRIGHTNESS = 0.9; // ← Ajuste cette valeur !
+const float FACE_BRIGHTNESS = 0.7; // ← Ajuste cette valeur !
 
 // AMBIENT OCCLUSION
-const float AO_STRENGTH = 0.2;     // Intensité de l'AO (0.0 = off, 1.0 = max)
+const float AO_STRENGTH = 0.3;     // Intensité de l'AO (0.0 = off, 1.0 = max)
 const float AO_RADIUS = 0.3;      // Rayon d'influence de l'AO
 
 // Couleurs de face (base colors from mockup - remises à saturation normale)
